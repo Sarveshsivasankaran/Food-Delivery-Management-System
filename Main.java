@@ -1,8 +1,9 @@
+import java.awt.FlowLayout;
 import java.sql.*;
 import javax.swing.*;
 
 
-class Customer{
+class Main{
     public static void main(String[] args) {
         String url = "jdbc:mysql://localhost:3306/";
         String user = "root";
@@ -11,6 +12,9 @@ class Customer{
         try {
             // Load MySQL JDBC Driver
             Class.forName("com.mysql.cj.jdbc.Driver");
+
+            // JFrame
+            Customer cust=new Customer();
 
             // Connect to database
             Connection conn = DriverManager.getConnection(url, user, password);
@@ -36,5 +40,22 @@ class Customer{
             System.out.println("❌ SQL Error!");
             e.printStackTrace();
         }
+    }
+}
+
+class Customer extends JFrame{
+    public Customer(){
+        JLabel LT=new JLabel("Login:");
+        JTextField number=new JTextField(20);
+        JButton btn=new JButton("OK");
+        add(LT);
+        add(number);
+        add(btn);
+        int n=Integer.parseInt(number.getText());
+        
+        setLayout(new FlowLayout());
+        setVisible(true);
+        setSize(500,500);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
 }
