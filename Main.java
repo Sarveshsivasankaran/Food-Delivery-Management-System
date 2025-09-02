@@ -1,9 +1,12 @@
+
 import java.awt.FlowLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.sql.*;
 import javax.swing.*;
 
+class Main {
 
-class Main{
     public static void main(String[] args) {
         String url = "jdbc:mysql://localhost:3306/";
         String user = "root";
@@ -14,11 +17,11 @@ class Main{
             Class.forName("com.mysql.cj.jdbc.Driver");
 
             // JFrame
-            Customer cust=new Customer();
+            Customer cust = new Customer();
 
             // Connect to database
             Connection conn = DriverManager.getConnection(url, user, password);
-            
+
             // Create Database if not exists
             String createTableSQL = "CREATE database if not exists Restaurant";
             Statement stmt = conn.createStatement();
@@ -43,19 +46,60 @@ class Main{
     }
 }
 
-class Customer extends JFrame{
-    public Customer(){
-        JLabel LT=new JLabel("Login:");
-        JTextField number=new JTextField(20);
-        JButton btn=new JButton("OK");
+class Customer extends JFrame {
+
+    public Customer() {
+        String url = "jdbc:mysql://localhost:3306/";
+        String user = "root";
+        String password = "";
+        setLayout(new FlowLayout());
+        setSize(500, 500);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        JLabel LT = new JLabel("Login:");
+        JTextField number = new JTextField(20);
+        JButton btn = new JButton("OK");
+
         add(LT);
         add(number);
         add(btn);
-        int n=Integer.parseInt(number.getText());
-        
-        setLayout(new FlowLayout());
+        btn.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    int n = Integer.parseInt(number.getText());
+                    System.out.println("Parsed number: " + n);
+
+                    // Example DB query
+                    try (Connection conn = DriverManager.getConnection(
+                            "jdbc:mysql://localhost:3306/Restaurant?serverTimezone=UTC",
+                            "root", "")) {
+                        String insertSQL = "INSERT INTO Users (name, email, password, phone, role) VALUES (?,?,?,?,?)";
+                        PreparedStatement ps = conn.prepareStatement(insertSQL);
+
+                        // Example static values (you can replace with JTextFields)
+                        ps.setString(1, "John Doe");           // name
+                        ps.setString(2, "john" + n + "@mail.com"); // email must be unique
+                        ps.setString(3, "secret123");          // password
+                        ps.setString(4, String.valueOf(n));    // phone (from input)
+                        ps.setString(5, "customer");           // role
+
+                        int rows = ps.executeUpdate();  // ✅ executeUpdate for INSERT
+                        if (rows > 0) {
+                            System.out.println("✅ User inserted successfully!");
+                        } else {
+                            System.out.println("⚠️ No user inserted.");
+                        }
+                    } catch (SQLException sqlEx) {
+                        sqlEx.printStackTrace();
+                    }
+
+                } catch (NumberFormatException ex) {
+                    System.out.println("Invalid number entered: " + number.getText());
+                }
+            }
+        });
+
         setVisible(true);
-        setSize(500,500);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
     }
 }
