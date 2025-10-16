@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="Food-Delivery-Management-System">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/javaFX-253.27642.17.zip!/" />
+      <root url="jar://$PROJECT_DIR$/mysql-connector-j-9.4.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
