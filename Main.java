@@ -6,11 +6,11 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import java.sql.*;
 
-public class RestaurantSystem extends Application {
+public class Main extends Application {
 
     private static final String URL = "jdbc:mysql://localhost:3306/";
     private static final String USER = "root";
-    private static final String PASSWORD = "root";
+    private static final String PASSWORD = "";
 
     private Stage stage;
 
