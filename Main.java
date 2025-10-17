@@ -28,6 +28,7 @@ public class Main extends Application {
             stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS Restaurant");
             stmt.executeUpdate("USE Restaurant");
 
+            // Users
             stmt.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS Users (
                     user_id INT PRIMARY KEY AUTO_INCREMENT,
@@ -38,6 +39,28 @@ public class Main extends Application {
                     role ENUM('customer','restaurant','delivery','admin')
                 )
             """);
+
+            // Menu
+            stmt.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS Menu (
+                    item_id INT PRIMARY KEY AUTO_INCREMENT,
+                    item_name VARCHAR(100),
+                    price DOUBLE,
+                    restaurant_name VARCHAR(100)
+                )
+            """);
+
+            // Orders
+            stmt.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS Orders (
+                    order_id INT PRIMARY KEY AUTO_INCREMENT,
+                    customer_name VARCHAR(100),
+                    item_name VARCHAR(100),
+                    status ENUM('Pending','Preparing','Out for Delivery','Delivered') DEFAULT 'Pending',
+                    delivery_agent VARCHAR(100)
+                )
+            """);
+
             System.out.println("✅ Database ready!");
             conn.close();
         } catch (Exception e) {
@@ -142,7 +165,7 @@ public class Main extends Application {
                 ps.setString(5, cbRole.getValue());
                 ps.executeUpdate();
                 lblStatus.setText("✅ Registered Successfully!");
-                lblStatus.setStyle("-fx-text-fill: lightgreen;");
+                lblStatus.setStyle("-fx-text-fill: white;");
                 tfName.clear(); tfEmail.clear(); tfPass.clear(); tfPhone.clear(); cbRole.setValue(null);
             } catch (SQLException ex) {
                 lblStatus.setText("❌ Error: " + ex.getMessage());
@@ -164,52 +187,208 @@ public class Main extends Application {
     private void showCustomerDashboard(String name) {
         Label lbl = new Label("👋 Welcome " + name + " (Customer)");
         lbl.setStyle("-fx-font-size: 20px; -fx-text-fill: white; -fx-font-weight: bold;");
+
+        ComboBox<String> cbItems = new ComboBox<>();
+        Label lblStatus = new Label();
+
+        try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+            Statement st = conn.createStatement();
+            ResultSet rs = st.executeQuery("SELECT item_name, restaurant_name, price FROM Menu");
+            while (rs.next()) {
+                cbItems.getItems().add(rs.getString("item_name") + " - ₹" + rs.getDouble("price") + " (" + rs.getString("restaurant_name") + ")");
+            }
+        } catch (SQLException ex) {
+            lblStatus.setText("❌ Failed to load menu: " + ex.getMessage());
+            lblStatus.setStyle("-fx-text-fill: yellow;");
+        }
+
+        Button btnOrder = new Button("🛒 Place Order");
+        Button btnHistory = new Button("📜 View Orders");
         Button logout = new Button("Logout");
-        logout.setStyle("-fx-background-color: #ff4757; -fx-text-fill: white;");
-        logout.setOnAction(e -> showLoginPage());
 
-        Button orderBtn = new Button("🛒 Place Dummy Order");
-        Label lblMsg = new Label();
+        TextArea txtOrders = new TextArea(); txtOrders.setPrefHeight(200); txtOrders.setEditable(false);
 
-        orderBtn.setOnAction(e -> {
+        btnOrder.setOnAction(e -> {
+            if (cbItems.getValue() == null) {
+                lblStatus.setText("⚠️ Select an item first!");
+                lblStatus.setStyle("-fx-text-fill: yellow;");
+                return;
+            }
+
+            String item = cbItems.getValue().split(" - ")[0];
+
             try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
-                PreparedStatement ps = conn.prepareStatement("INSERT INTO Users (name, email, password, phone, role) VALUES (?,?,?,?,?)");
-                ps.setString(1, name + "_order");
-                ps.setString(2, name + "_order@mail.com");
-                ps.setString(3, "temp");
-                ps.setString(4, "9999999999");
-                ps.setString(5, "customer");
+                // auto-assign delivery agent
+                Statement st = conn.createStatement();
+                ResultSet rs = st.executeQuery("SELECT name FROM Users WHERE role='delivery' ORDER BY RAND() LIMIT 1");
+                String agent = rs.next() ? rs.getString("name") : "Unassigned";
+
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO Orders (customer_name, item_name, delivery_agent) VALUES (?,?,?)");
+                ps.setString(1, name);
+                ps.setString(2, item);
+                ps.setString(3, agent);
                 ps.executeUpdate();
-                lblMsg.setText("✅ Dummy data inserted!");
-                lblMsg.setStyle("-fx-text-fill: yellow;");
+
+                lblStatus.setText("✅ Order placed! Assigned to: " + agent);
+                lblStatus.setStyle("-fx-text-fill: white;");
             } catch (SQLException ex) {
-                lblMsg.setText("❌ " + ex.getMessage());
-                lblMsg.setStyle("-fx-text-fill: red;");
+                lblStatus.setText("❌ " + ex.getMessage());
+                lblStatus.setStyle("-fx-text-fill: red;");
             }
         });
 
-        VBox box = new VBox(15, lbl, orderBtn, lblMsg, logout);
+        btnHistory.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                PreparedStatement ps = conn.prepareStatement("SELECT * FROM Orders WHERE customer_name=?");
+                ps.setString(1, name);
+                ResultSet rs = ps.executeQuery();
+                StringBuilder sb = new StringBuilder();
+                while (rs.next()) {
+                    sb.append("#").append(rs.getInt("order_id")).append(" - ")
+                            .append(rs.getString("item_name")).append(" [")
+                            .append(rs.getString("status")).append("] (Agent: ")
+                            .append(rs.getString("delivery_agent")).append(")\n");
+                }
+                txtOrders.setText(sb.toString());
+            } catch (SQLException ex) {
+                txtOrders.setText("❌ Error fetching orders");
+            }
+        });
+
+        logout.setOnAction(e -> showLoginPage());
+
+        VBox box = new VBox(10, lbl, cbItems, btnOrder, btnHistory, txtOrders, lblStatus, logout);
         box.setAlignment(Pos.CENTER);
         box.setPadding(new Insets(25));
         box.setStyle("-fx-background-color: linear-gradient(to bottom right, #74ABE2, #5563DE);");
 
-        stage.setScene(new Scene(box, 420, 350));
+        stage.setScene(new Scene(box, 480, 500));
+    }
+
+    // ---------------- DELIVERY DASHBOARD (UPGRADED) ----------------
+    private void showDeliveryDashboard(String name) {
+        Label lbl = new Label("🚚 Welcome " + name + " (Delivery Agent)");
+        lbl.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: white;");
+
+        Button btnLoad = new Button("📦 Load My Orders");
+        TextArea txt = new TextArea(); txt.setPrefHeight(250);
+        TextField tfOrderID = new TextField(); tfOrderID.setPromptText("Enter Order ID");
+
+        Button btnPending = new Button("Pending");
+        Button btnPreparing = new Button("Preparing");
+        Button btnOut = new Button("Out for Delivery");
+        Button btnDelivered = new Button("Delivered");
+        Button logout = new Button("Logout");
+
+        HBox statusBtns = new HBox(10, btnPending, btnPreparing, btnOut, btnDelivered);
+        statusBtns.setAlignment(Pos.CENTER);
+
+        btnLoad.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                PreparedStatement ps = conn.prepareStatement("SELECT * FROM Orders WHERE delivery_agent=?");
+                ps.setString(1, name);
+                ResultSet rs = ps.executeQuery();
+                StringBuilder sb = new StringBuilder();
+                while (rs.next()) {
+                    sb.append("#").append(rs.getInt("order_id")).append(" - ")
+                            .append(rs.getString("item_name")).append(" [")
+                            .append(rs.getString("status")).append("]\n");
+                }
+                txt.setText(sb.toString());
+            } catch (SQLException ex) {
+                txt.setText("❌ Failed to fetch deliveries");
+            }
+        });
+
+        // update order status
+        btnPending.setOnAction(e -> updateStatus(tfOrderID.getText(), "Pending", name, txt));
+        btnPreparing.setOnAction(e -> updateStatus(tfOrderID.getText(), "Preparing", name, txt));
+        btnOut.setOnAction(e -> updateStatus(tfOrderID.getText(), "Out for Delivery", name, txt));
+        btnDelivered.setOnAction(e -> updateStatus(tfOrderID.getText(), "Delivered", name, txt));
+
+        logout.setOnAction(e -> showLoginPage());
+
+        VBox box = new VBox(10, lbl, btnLoad, txt, tfOrderID, statusBtns, logout);
+        box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(25));
+        box.setStyle("-fx-background-color: linear-gradient(to bottom right, #11998e, #38ef7d);");
+
+        stage.setScene(new Scene(box, 520, 520));
+    }
+
+    private void updateStatus(String orderId, String newStatus, String agent, TextArea txt) {
+        if (orderId.isEmpty()) {
+            txt.setText("⚠️ Enter an order ID first!");
+            return;
+        }
+        try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+            PreparedStatement ps = conn.prepareStatement("UPDATE Orders SET status=?, delivery_agent=? WHERE order_id=?");
+            ps.setString(1, newStatus);
+            ps.setString(2, agent);
+            ps.setInt(3, Integer.parseInt(orderId));
+            int rows = ps.executeUpdate();
+            txt.setText(rows > 0 ? "✅ Status updated to: " + newStatus : "⚠️ Order not found!");
+        } catch (Exception ex) {
+            txt.setText("❌ " + ex.getMessage());
+        }
     }
 
     // ---------------- RESTAURANT DASHBOARD ----------------
     private void showRestaurantDashboard(String name) {
         Label lbl = new Label("🏪 Welcome " + name + " (Restaurant)");
         lbl.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: white;");
+
+        TextField tfItem = new TextField(); tfItem.setPromptText("Item name");
+        TextField tfPrice = new TextField(); tfPrice.setPromptText("Price");
+        Button btnAdd = new Button("➕ Add Item");
+        Button btnViewOrders = new Button("📦 View Orders");
         Button logout = new Button("Logout");
-        logout.setStyle("-fx-background-color: #ff6b81; -fx-text-fill: white;");
+
+        TextArea txt = new TextArea(); txt.setPrefHeight(250); txt.setEditable(false);
+        Label lblStatus = new Label();
+
+        btnAdd.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                PreparedStatement ps = conn.prepareStatement("INSERT INTO Menu (item_name, price, restaurant_name) VALUES (?,?,?)");
+                ps.setString(1, tfItem.getText());
+                ps.setDouble(2, Double.parseDouble(tfPrice.getText()));
+                ps.setString(3, name);
+                ps.executeUpdate();
+                lblStatus.setText("✅ Item added!");
+                lblStatus.setStyle("-fx-text-fill: white;");
+                tfItem.clear(); tfPrice.clear();
+            } catch (Exception ex) {
+                lblStatus.setText("❌ " + ex.getMessage());
+                lblStatus.setStyle("-fx-text-fill: red;");
+            }
+        });
+
+        btnViewOrders.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                PreparedStatement ps = conn.prepareStatement("SELECT * FROM Orders WHERE item_name IN (SELECT item_name FROM Menu WHERE restaurant_name=?)");
+                ps.setString(1, name);
+                ResultSet rs = ps.executeQuery();
+                StringBuilder sb = new StringBuilder();
+                while (rs.next()) {
+                    sb.append("#").append(rs.getInt("order_id")).append(" - ")
+                            .append(rs.getString("customer_name")).append(" ordered ")
+                            .append(rs.getString("item_name")).append(" [")
+                            .append(rs.getString("status")).append("]\n");
+                }
+                txt.setText(sb.toString());
+            } catch (SQLException ex) {
+                txt.setText("❌ Failed to fetch orders");
+            }
+        });
+
         logout.setOnAction(e -> showLoginPage());
 
-        VBox box = new VBox(20, lbl, new Label("🍔 Manage menu & orders here soon!"), logout);
+        VBox box = new VBox(10, lbl, tfItem, tfPrice, btnAdd, btnViewOrders, txt, lblStatus, logout);
         box.setAlignment(Pos.CENTER);
         box.setPadding(new Insets(25));
         box.setStyle("-fx-background-color: linear-gradient(to bottom right, #ff758c, #ff7eb3);");
 
-        stage.setScene(new Scene(box, 420, 350));
+        stage.setScene(new Scene(box, 520, 500));
     }
 
     // ---------------- ADMIN DASHBOARD ----------------
@@ -219,7 +398,7 @@ public class Main extends Application {
 
         Button btnView = new Button("📋 View All Users");
         TextArea txt = new TextArea();
-        txt.setPrefHeight(200);
+        txt.setPrefHeight(250);
         txt.setEditable(false);
 
         btnView.setOnAction(e -> {
@@ -229,9 +408,9 @@ public class Main extends Application {
                 StringBuilder sb = new StringBuilder();
                 while (rs.next()) {
                     sb.append(rs.getInt("user_id")).append(". ")
-                      .append(rs.getString("name")).append(" - ")
-                      .append(rs.getString("email")).append(" (")
-                      .append(rs.getString("role")).append(")\n");
+                            .append(rs.getString("name")).append(" - ")
+                            .append(rs.getString("email")).append(" (")
+                            .append(rs.getString("role")).append(")\n");
                 }
                 txt.setText(sb.toString());
             } catch (SQLException ex) {
@@ -239,31 +418,82 @@ public class Main extends Application {
             }
         });
 
+        Button btnViewOrders = new Button("📦 View All Orders");
+        btnViewOrders.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                Statement st = conn.createStatement();
+                ResultSet rs = st.executeQuery("SELECT * FROM Orders");
+                StringBuilder sb = new StringBuilder();
+                while (rs.next()) {
+                    sb.append("#").append(rs.getInt("order_id")).append(" - ")
+                            .append(rs.getString("customer_name")).append(" ordered ")
+                            .append(rs.getString("item_name")).append(" [")
+                            .append(rs.getString("status")).append("] (Agent: ")
+                            .append(rs.getString("delivery_agent")).append(")\n");
+                }
+                txt.setText(sb.toString());
+            } catch (SQLException ex) {
+                txt.setText("❌ Error fetching orders: " + ex.getMessage());
+            }
+        });
+
+        Button btnViewMenu = new Button("🍔 View All Menu Items");
+        btnViewMenu.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                Statement st = conn.createStatement();
+                ResultSet rs = st.executeQuery("SELECT * FROM Menu");
+                StringBuilder sb = new StringBuilder();
+                while (rs.next()) {
+                    sb.append("#").append(rs.getInt("item_id")).append(" - ")
+                            .append(rs.getString("item_name")).append(" ₹")
+                            .append(rs.getDouble("price")).append(" (")
+                            .append(rs.getString("restaurant_name")).append(")\n");
+                }
+                txt.setText(sb.toString());
+            } catch (SQLException ex) {
+                txt.setText("❌ Error fetching menu: " + ex.getMessage());
+            }
+        });
+
+        Button btnDeleteUser = new Button("🗑 Delete User by ID");
+        TextField tfUserId = new TextField();
+        tfUserId.setPromptText("Enter User ID");
+        Label lblStatus = new Label();
+
+        btnDeleteUser.setOnAction(e -> {
+            try (Connection conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/Restaurant", USER, PASSWORD)) {
+                PreparedStatement ps = conn.prepareStatement("DELETE FROM Users WHERE user_id=?");
+                ps.setInt(1, Integer.parseInt(tfUserId.getText()));
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    lblStatus.setText("✅ User deleted successfully!");
+                    lblStatus.setStyle("-fx-text-fill: white;");
+                } else {
+                    lblStatus.setText("⚠️ User not found!");
+                    lblStatus.setStyle("-fx-text-fill: yellow;");
+                }
+            } catch (Exception ex) {
+                lblStatus.setText("❌ " + ex.getMessage());
+                lblStatus.setStyle("-fx-text-fill: red;");
+            }
+        });
+
         Button logout = new Button("Logout");
         logout.setStyle("-fx-background-color: #ff4757; -fx-text-fill: white;");
         logout.setOnAction(e -> showLoginPage());
 
-        VBox box = new VBox(15, lbl, btnView, txt, logout);
+        VBox box = new VBox(10,
+                lbl,
+                new HBox(10, btnView, btnViewOrders, btnViewMenu),
+                txt,
+                new HBox(10, tfUserId, btnDeleteUser),
+                lblStatus,
+                logout
+        );
         box.setAlignment(Pos.CENTER);
         box.setPadding(new Insets(25));
         box.setStyle("-fx-background-color: linear-gradient(to bottom right, #434343, #000000);");
 
-        stage.setScene(new Scene(box, 500, 400));
-    }
-
-    // ---------------- DELIVERY DASHBOARD ----------------
-    private void showDeliveryDashboard(String name) {
-        Label lbl = new Label("🚚 Welcome " + name + " (Delivery Agent)");
-        lbl.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: white;");
-        Button logout = new Button("Logout");
-        logout.setStyle("-fx-background-color: #343a40; -fx-text-fill: white;");
-        logout.setOnAction(e -> showLoginPage());
-
-        VBox box = new VBox(20, lbl, new Label("📦 Delivery updates coming soon!"), logout);
-        box.setAlignment(Pos.CENTER);
-        box.setPadding(new Insets(25));
-        box.setStyle("-fx-background-color: linear-gradient(to bottom right, #11998e, #38ef7d);");
-
-        stage.setScene(new Scene(box, 420, 350));
+        stage.setScene(new Scene(box, 600, 500));
     }
 }
