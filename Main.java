@@ -291,6 +291,7 @@ public class Main extends Application {
                 StringBuilder sb = new StringBuilder();
                 while (rs.next()) {
                     sb.append("#").append(rs.getInt("order_id")).append(" - ")
+                            .append(rs.getString("customer_name")).append(" ordered ")
                             .append(rs.getString("item_name")).append(" [")
                             .append(rs.getString("status")).append("]\n");
                 }
